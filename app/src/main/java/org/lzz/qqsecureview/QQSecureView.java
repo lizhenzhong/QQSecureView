@@ -22,21 +22,38 @@ import android.view.View;
 import android.view.animation.AccelerateInterpolator;
 
 public class QQSecureView extends View {
+    /** 绘制渐变呼吸环的画笔 */
     private Paint mGradientPaint;
+    /** 绘制3段弧形的画笔 */
     private Paint mArcPaint;
+    /** 绘制中心透明圆的画笔 */
     private Paint mBackPaint;
+    /** 绘制正三角形的画笔 */
     private Paint mTrianglePaint;
+    /** 绘制正三角形内虚线的画笔 */
     private Paint mLinePaint;
+    /** 绘制中心图片的画笔 */
     private Paint mBitmapPaint;
+    /** 绘制虚线上移动游标的画笔 */
     private Paint mLightPaint;
-
+    /** 外圆半径 */
     private float mRadius;
+    /** 中心透明圆的半径 */
     private float mBackRadius;
-
+    /** View的宽高 */
     private int width, height;
-
+    /** 渐变呼吸环的宽 */
     private int mGradientStrokeWidth = 50;
+    /** 3段环的宽 */
     private int mArcStrokeWidth = mGradientStrokeWidth / 2;
+    /** 画三角形路径 */
+    private Path mTrianglePath;
+    /** 画三角形内部虚线路径 */
+    private Path mLinePath1, mLinePath2, mLinePath3;
+    /** 中心图片 */
+    private Bitmap bitmap;
+    /** 动画 */
+    private ValueAnimator valueAnimator;
 
     private SweepGradient sweepGradient;//扫描渲染
     private LinearGradient linearGradient;//线性渲染
@@ -46,13 +63,22 @@ public class QQSecureView extends View {
     private RectF mBorderRectF;
     private Rect mBitmapRect;
 
-    private Path mPath;
-    private Path mLinePath1;
-    private Path mLinePath2;
-    private Path mLinePath3;
-
-    private Bitmap bitmap;
-    private ValueAnimator valueAnimator;
+    /** 3段环的弧形角度 */
+    private float mSweepAngle;
+    /** 3段环的间隔角度 */
+    private float mGapAngle = 3f;
+    /** 呼吸环的弧形角度 */
+    private float mGradientSweepAngle;
+    /** 呼吸环的间隔角度 */
+    private float mGradientGapAngle = 0.1f;
+    /** 游标长度 */
+    private int mLightLen = 10;
+    /** 动画执行的当前值 */
+    private float mCurrentValue;
+    /** 是否是呼吸动画 */
+    private boolean isBreath;
+    /** 记录动画执行的次数来判断呼吸动画和游标动画的执行 */
+    private int step;
 
     public QQSecureView(Context context) {
         super(context);
@@ -117,7 +143,7 @@ public class QQSecureView extends View {
         mLightPaint.setStyle(Paint.Style.STROKE);
         mLightPaint.setStrokeCap(Paint.Cap.ROUND);
 
-        mPath = new Path();
+        mTrianglePath = new Path();
         mLinePath1 = new Path();
         mLinePath2 = new Path();
         mLinePath3 = new Path();
@@ -125,14 +151,14 @@ public class QQSecureView extends View {
         bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.u1);
 
         valueAnimator = ValueAnimator.ofFloat(0f, 1f);
-        valueAnimator.setInterpolator(new AccelerateInterpolator());
-        valueAnimator.setRepeatCount(ValueAnimator.INFINITE);
+        valueAnimator.setInterpolator(new AccelerateInterpolator());//先慢后快插值器
+        valueAnimator.setRepeatCount(ValueAnimator.INFINITE);//无限循环
         valueAnimator.setDuration(1000);
 
         valueAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
             public void onAnimationUpdate(ValueAnimator animation) {
-                currentValue = (float) animation.getAnimatedValue();
+                mCurrentValue = (float) animation.getAnimatedValue();
                 postInvalidate();
             }
         });
@@ -155,7 +181,7 @@ public class QQSecureView extends View {
 
             @Override
             public void onAnimationRepeat(Animator animation) {
-                if (isBreath) {
+                if (isBreath) {//呼吸动画重复两次，一次由淡到深，一次逆向
                     ++step;
                     if (step == 2) {
                         isBreath = false;
@@ -185,7 +211,14 @@ public class QQSecureView extends View {
         mRadius = width / 2f;
         mBackRadius = mRadius - mGradientStrokeWidth / 4f - mArcStrokeWidth * 2;
 
-        //环形渲染
+        /*
+        *环形渲染实现外圈渐变的呼吸环
+        *颜色分布由内到外：全透明、半透明1、白色、半透明2
+        *全透明色渐变终止位置：0
+        *半透明1渐变终止位置：1 - (mGradientStrokeWidth / mRadius)
+        *白色渐变终止位置：1 - (mGradientStrokeWidth / (2 * mRadius))
+        *半透明2渐变终止位置：1
+        */
         if (radialGradient == null) {
             radialGradient = new RadialGradient(width / 2, height / 2, mRadius, new int[]{Color.TRANSPARENT, Color.argb(20, 255, 255, 255), Color.argb(255, 255, 255, 255), Color.argb(20, 255, 255, 255)},
                     new float[]{0f, 1 - (mGradientStrokeWidth / mRadius), 1 - (mGradientStrokeWidth / (2 * mRadius)), 1f}, Shader.TileMode.CLAMP);
@@ -200,13 +233,13 @@ public class QQSecureView extends View {
             mBorderRectF = new RectF(mGradientStrokeWidth / 4f + mArcStrokeWidth / 2f, mGradientStrokeWidth / 4f + mArcStrokeWidth / 2f, width - mGradientStrokeWidth / 4f - mArcStrokeWidth / 2f, height - mGradientStrokeWidth / 4f - mArcStrokeWidth / 2f);
         }
 
-        sweepAngle = (360 - 3 * gapAngle) / 3f;
-        gradientSweepAngle = (360 - 3 * gradientGapAngle) / 3f;
+        mSweepAngle = (360 - 3 * mGapAngle) / 3f;
+        mGradientSweepAngle = (360 - 3 * mGradientGapAngle) / 3f;
 
-        mPath.moveTo(width / 2, height / 2 - mBackRadius);
-        mPath.lineTo((float) (width / 2 + Math.cos(Math.toRadians(30)) * mBackRadius), height / 2 + mBackRadius / 2f);
-        mPath.lineTo((float) (width / 2 - Math.cos(Math.toRadians(30)) * mBackRadius), height / 2 + mBackRadius / 2f);
-        mPath.close();
+        mTrianglePath.moveTo(width / 2, height / 2 - mBackRadius);
+        mTrianglePath.lineTo((float) (width / 2 + Math.cos(Math.toRadians(30)) * mBackRadius), height / 2 + mBackRadius / 2f);
+        mTrianglePath.lineTo((float) (width / 2 - Math.cos(Math.toRadians(30)) * mBackRadius), height / 2 + mBackRadius / 2f);
+        mTrianglePath.close();
 
         mLinePath1.moveTo(width / 2, height / 2);
         mLinePath1.lineTo(width / 2, height / 2 - mBackRadius);
@@ -226,69 +259,62 @@ public class QQSecureView extends View {
         }
     }
 
-    private float sweepAngle;
-    private float gapAngle = 3f;
-
-    private float gradientSweepAngle;
-    private float gradientGapAngle = 0.1f;
-
-    private int step;
-    private int lightLen = 10;
-
-    private float currentValue;
-    private boolean isBreath;
-
     @Override
     protected void onDraw(Canvas canvas) {
+        //呼吸动画重复两次，一次由淡到深，一次逆向，游标动画直接从新执行
         valueAnimator.setRepeatMode(isBreath ? ValueAnimator.REVERSE : ValueAnimator.RESTART);
 
         if (isBreath) {
             canvas.save();
-            int aph = (int) (255 * currentValue);
+            int aph = (int) (255 * mCurrentValue);
             mGradientPaint.setAlpha(aph);//通过改变透明度来实现渐变环呼吸的动画效果
-            for (int i = 0; i < 3; i++) {
-                canvas.drawArc(mGradientRectF, gradientGapAngle / 2 - 90 + (gradientSweepAngle + gradientGapAngle) * i, gradientSweepAngle, true, mGradientPaint);
+            for (int i = 0; i < 3; i++) {//绘制渐变的呼吸环
+                canvas.drawArc(mGradientRectF, mGradientGapAngle / 2 - 90 + (mGradientSweepAngle + mGradientGapAngle) * i, mGradientSweepAngle, true, mGradientPaint);
             }
             canvas.restore();
         }
 
-        for (int i = 0; i < 3; i++) {
-            canvas.drawArc(mBorderRectF, gapAngle / 2 - 90 + (sweepAngle + gapAngle) * i, sweepAngle, false, mArcPaint);
+        for (int i = 0; i < 3; i++) {//绘制3段环
+            canvas.drawArc(mBorderRectF, mGapAngle / 2 - 90 + (mSweepAngle + mGapAngle) * i, mSweepAngle, false, mArcPaint);
         }
 
+        //绘制中心的半透明圆
         canvas.drawCircle(width / 2, height / 2, mBackRadius, mBackPaint);
-        canvas.drawPath(mPath, mTrianglePaint);
-
+        //绘制正三角形
+        canvas.drawPath(mTrianglePath, mTrianglePaint);
+        //绘制虚线
         canvas.drawPath(mLinePath1, mLinePaint);
         canvas.drawPath(mLinePath2, mLinePaint);
         canvas.drawPath(mLinePath3, mLinePaint);
 
         if (!isBreath) {
-            canvas.drawLine(width / 2, height / 2 - mBackRadius * currentValue - lightLen, width / 2, height / 2 - mBackRadius * currentValue, mLightPaint);
-
+            //绘制从正三角形的上顶点到中心点的那条虚线上游标
+            canvas.drawLine(width / 2, height / 2 - mBackRadius * mCurrentValue - mLightLen, width / 2, height / 2 - mBackRadius * mCurrentValue, mLightPaint);
+            //把上面绘制的游标以中心点为中心按顺时针旋转120度则为第二个游标
             canvas.save();
             canvas.rotate(120, width / 2, height / 2);
-            canvas.drawLine(width / 2, height / 2 - mBackRadius * currentValue - lightLen, width / 2, height / 2 - mBackRadius * currentValue, mLightPaint);
+            canvas.drawLine(width / 2, height / 2 - mBackRadius * mCurrentValue - mLightLen, width / 2, height / 2 - mBackRadius * mCurrentValue, mLightPaint);
             canvas.restore();
-
+            //按顺时针旋转240度则为第二个游标
             canvas.save();
             canvas.rotate(240, width / 2, height / 2);
-            canvas.drawLine(width / 2, height / 2 - mBackRadius * currentValue - lightLen, width / 2, height / 2 - mBackRadius * currentValue, mLightPaint);
+            canvas.drawLine(width / 2, height / 2 - mBackRadius * mCurrentValue - mLightLen, width / 2, height / 2 - mBackRadius * mCurrentValue, mLightPaint);
             canvas.restore();
 
-            canvas.drawLine((float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * currentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * currentValue) - lightLen, height / 2 + mBackRadius / 2f, mLightPaint);
-            canvas.drawLine((float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * currentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * currentValue) + lightLen, height / 2 + mBackRadius / 2f, mLightPaint);
-
+            //正三角形底边上的两个左右方向移动的游标
+            canvas.drawLine((float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue) - mLightLen, height / 2 + mBackRadius / 2f, mLightPaint);
+            canvas.drawLine((float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue) + mLightLen, height / 2 + mBackRadius / 2f, mLightPaint);
+            //以正三角形的左下顶点为中心按逆时针旋转60度则为第二个游标
             canvas.save();
             canvas.rotate(-60, (float) (width / 2 - Math.cos(Math.toRadians(30)) * mBackRadius), height / 2 + mBackRadius / 2f);
-            canvas.drawLine((float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * currentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * currentValue) - lightLen, height / 2 + mBackRadius / 2f, mLightPaint);
-            canvas.drawLine((float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * currentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * currentValue) + lightLen, height / 2 + mBackRadius / 2f, mLightPaint);
+            canvas.drawLine((float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue) - mLightLen, height / 2 + mBackRadius / 2f, mLightPaint);
+            canvas.drawLine((float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue) + mLightLen, height / 2 + mBackRadius / 2f, mLightPaint);
             canvas.restore();
-
+            //以正三角形的右下顶点为中心按逆顺时针旋转60度则为第三个游标
             canvas.save();
             canvas.rotate(60, (float) (width / 2 + Math.cos(Math.toRadians(30)) * mBackRadius), height / 2 + mBackRadius / 2f);
-            canvas.drawLine((float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * currentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * currentValue) - lightLen, height / 2 + mBackRadius / 2f, mLightPaint);
-            canvas.drawLine((float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * currentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * currentValue) + lightLen, height / 2 + mBackRadius / 2f, mLightPaint);
+            canvas.drawLine((float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 - mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue) - mLightLen, height / 2 + mBackRadius / 2f, mLightPaint);
+            canvas.drawLine((float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue), height / 2 + mBackRadius / 2f, (float) (width / 2 + mBackRadius * Math.sin(Math.toRadians(60)) * mCurrentValue) + mLightLen, height / 2 + mBackRadius / 2f, mLightPaint);
             canvas.restore();
         }
 
